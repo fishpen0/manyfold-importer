@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "Manyfold Importer",
+  "version": "0.1.0",
+  "description": "Import 3D models from Makerworld into your Manyfold instance with one click.",
+
+  "permissions": [
+    "storage",
+    "cookies",
+    "activeTab",
+    "scripting"
+  ],
+
+  "host_permissions": [
+    "https://makerworld.com/*",
+    "https://makerworld.bblmake.com/*"
+  ],
+
+  "background": {
+    "scripts": ["background/service-worker.js"],
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "Manyfold Importer"
+  },
+
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://makerworld.com/*/models/*"],
+      "js": ["content-scripts/base-scraper.js", "content-scripts/makerworld.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "manyfold-importer@loganstuart.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

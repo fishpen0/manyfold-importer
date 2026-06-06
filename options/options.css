@@ -1,0 +1,215 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e8eaf0;
+  --muted: #8891a4;
+  --accent: #7c6af7;
+  --accent-hover: #9585ff;
+  --success: #22c55e;
+  --error: #ef4444;
+  --warn: #f59e0b;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 32px 16px;
+}
+
+.container {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+header {
+  margin-bottom: 32px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+.field {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.optional {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+input[type="text"],
+input[type="url"],
+input[type="password"] {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus {
+  border-color: var(--accent);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+code {
+  background: var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 11px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+button {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+
+.status.success {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--success);
+}
+
+.status.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--error);
+}
+
+.status.hidden { display: none; }
+
+.collections-list {
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.collections-list li {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.collections-list li:last-child { border-bottom: none; }
+
+.collection-id {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.collection-id:hover { color: var(--accent); }
+
+#collectionsWrap {
+  margin-top: 24px;
+}
+
+#collectionsWrap.hidden { display: none; }

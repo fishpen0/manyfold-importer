@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manyfold Importer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="popup-header">
+    <span class="popup-title">Manyfold Importer</span>
+    <a href="#" id="openSettings" class="settings-link" title="Settings">⚙</a>
+  </header>
+
+  <!-- Not on a recognized model page -->
+  <div id="view-idle" class="view hidden">
+    <div class="empty-state">
+      <div class="empty-icon">📦</div>
+      <p>Navigate to a model page on Makerworld to import it into Manyfold.</p>
+      <a href="#" id="openOptions" class="link">Open Settings</a>
+    </div>
+  </div>
+
+  <!-- Scraping / loading -->
+  <div id="view-loading" class="view hidden">
+    <div class="empty-state">
+      <div class="spinner"></div>
+      <p>Reading model data…</p>
+    </div>
+  </div>
+
+  <!-- Model ready to import -->
+  <div id="view-ready" class="view hidden">
+    <div class="model-header">
+      <img id="coverImage" class="cover-image hidden" alt="Cover" />
+      <div class="model-meta">
+        <h2 id="modelTitle">—</h2>
+        <p id="modelCreator" class="creator">—</p>
+      </div>
+    </div>
+
+    <div class="detail-row">
+      <span class="label">License</span>
+      <span id="modelLicense" class="value">—</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="label">Tags</span>
+      <div id="modelTags" class="tags"></div>
+    </div>
+
+    <div class="detail-row">
+      <span class="label">Files</span>
+      <ul id="fileList" class="file-list"></ul>
+    </div>
+
+    <div id="noFilesWarning" class="warning hidden">
+      ⚠ No downloadable files found. Make sure you are logged into Makerworld.
+    </div>
+
+    <button id="uploadBtn" class="btn-primary upload-btn">Send to Manyfold</button>
+  </div>
+
+  <!-- Uploading in progress -->
+  <div id="view-uploading" class="view hidden">
+    <div class="progress-state">
+      <div class="spinner"></div>
+      <p id="progressText">Working…</p>
+    </div>
+  </div>
+
+  <!-- Duplicate detected -->
+  <div id="view-duplicate" class="view hidden">
+    <div class="result-state warn">
+      <div class="result-icon">⚠</div>
+      <p>This model already exists in your Manyfold library.</p>
+      <a id="existingModelLink" href="#" target="_blank" class="model-link">Open in Manyfold</a>
+      <button id="uploadAnywayBtn" class="btn-secondary">Import Anyway</button>
+    </div>
+  </div>
+
+  <!-- Success -->
+  <div id="view-done" class="view hidden">
+    <div class="result-state success">
+      <div class="result-icon">✓</div>
+      <p>Model imported successfully!</p>
+      <a id="newModelLink" href="#" target="_blank" class="model-link">Open in Manyfold →</a>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div id="view-error" class="view hidden">
+    <div class="result-state error">
+      <div class="result-icon">✕</div>
+      <p id="errorMessage">Something went wrong.</p>
+      <button id="retryBtn" class="btn-secondary">Retry</button>
+      <a href="#" id="openOptionsError" class="link">Check Settings</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manyfold Importer — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Manyfold Importer</h1>
+      <p class="subtitle">Configure your Manyfold instance</p>
+    </header>
+
+    <section>
+      <h2>Manyfold Instance</h2>
+
+      <div class="field">
+        <label for="manyfoldUrl">Instance URL</label>
+        <input
+          type="url"
+          id="manyfoldUrl"
+          placeholder="https://manyfold.example.com"
+          spellcheck="false"
+        />
+        <p class="hint">The base URL of your self-hosted Manyfold instance.</p>
+      </div>
+
+      <div class="field">
+        <label for="oauthClientId">OAuth Client ID</label>
+        <input
+          type="text"
+          id="oauthClientId"
+          placeholder="your-client-id"
+          spellcheck="false"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="field">
+        <label for="oauthClientSecret">OAuth Client Secret</label>
+        <input
+          type="password"
+          id="oauthClientSecret"
+          placeholder="your-client-secret"
+          autocomplete="off"
+        />
+        <p class="hint">
+          Create an OAuth application in your Manyfold settings under
+          <strong>Settings → OAuth Applications</strong>. Set the redirect URI to
+          <code>https://localhost</code> and grant the <code>read write</code> scopes.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="defaultCollectionId">Default Collection ID <span class="optional">(optional)</span></label>
+        <input
+          type="text"
+          id="defaultCollectionId"
+          placeholder="Leave blank for Manyfold's default"
+          spellcheck="false"
+        />
+        <p class="hint">
+          The numeric ID of the Manyfold collection to assign imported models to.
+          Find it in the collection's URL: <code>/collections/<strong>42</strong></code>.
+          Leave blank to skip collection assignment.
+        </p>
+      </div>
+
+      <div class="actions">
+        <button id="testBtn" class="btn-secondary">Test Connection</button>
+        <button id="saveBtn" class="btn-primary">Save Settings</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+
+      <div id="collectionsWrap" class="hidden">
+        <h3>Available Collections</h3>
+        <ul id="collectionsList" class="collections-list"></ul>
+      </div>
+    </section>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

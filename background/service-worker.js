@@ -133,14 +133,14 @@ async function handleStartUpload(modelData, tabId) {
 
   notifyPopup(tabId, { status: "uploading", progress: "Creating model…" });
 
-  // Check for duplicate (skipped when user explicitly chooses "Import Anyway")
+  // Best-effort duplicate check by title (skipped when user explicitly chooses "Import Anyway")
   if (!modelData._skipDuplicateCheck) {
     try {
-      const existing = await api.findModelBySourceUrl(modelData.sourceUrl);
+      const existing = await api.findModelByTitle(modelData.title);
       if (existing) {
         const state = {
           status: "duplicate",
-          existingUrl: `${settings.manyfoldUrl}/models/${existing.id}`,
+          existingUrl: `${settings.manyfoldUrl}${existing["@id"]}`,
           modelData,
           downloadedFiles,
         };
@@ -149,7 +149,6 @@ async function handleStartUpload(modelData, tabId) {
         return state;
       }
     } catch (e) {
-      // Non-fatal — proceed with upload
       console.warn("[Manyfold] Duplicate check failed:", e.message);
     }
   }
@@ -158,42 +157,37 @@ async function handleStartUpload(modelData, tabId) {
 }
 
 async function performUpload(api, modelData, downloadedFiles, settings, tabId) {
-  let createdModel;
-  try {
-    createdModel = await api.createModel({
-      title: modelData.title,
-      description: modelData.description,
-      sourceUrl: modelData.sourceUrl,
-      license: modelData.license,
-      tags: modelData.tags,
-      collectionId: settings.defaultCollectionId || null,
-      creatorName: modelData.creator?.name,
-    });
-  } catch (e) {
-    return setErrorState(tabId, `Failed to create model: ${e.message}`);
-  }
-
-  notifyPopup(tabId, { status: "uploading", progress: `Uploading ${downloadedFiles.length} file(s)…` });
-
-  for (const file of downloadedFiles) {
-    try {
-      await api.uploadFile(createdModel.id, file.blob, file.name);
-    } catch (e) {
-      console.warn(`[Manyfold] Failed to upload ${file.name}:`, e.message);
-    }
-  }
-
-  // Upload cover image if present
+  // Collect all files including cover image before TUS-uploading
+  const allFiles = [...downloadedFiles];
   if (modelData.coverImageUrl) {
     try {
       const imgBlob = await downloadFile(modelData.coverImageUrl, "cover.jpg");
-      await api.uploadFile(createdModel.id, imgBlob, "cover.jpg", "image");
+      allFiles.push({ name: "cover.jpg", blob: imgBlob });
     } catch (e) {
-      console.warn("[Manyfold] Cover image upload failed:", e.message);
+      console.warn("[Manyfold] Cover image download failed:", e.message);
     }
   }
 
-  const modelUrl = `${(await getSettings()).manyfoldUrl}/models/${createdModel.id}`;
+  notifyPopup(tabId, { status: "uploading", progress: `Uploading ${allFiles.length} file(s)…` });
+
+  try {
+    await api.importModel(
+      {
+        title: modelData.title,
+        description: modelData.description,
+        sourceUrl: modelData.sourceUrl,
+        license: modelData.license,
+        tags: modelData.tags,
+        collectionId: settings.defaultCollectionId || null,
+      },
+      allFiles
+    );
+  } catch (e) {
+    return setErrorState(tabId, `Import failed: ${e.message}`);
+  }
+
+  // POST /models returns 202 Accepted with no body — link to models list
+  const modelUrl = `${settings.manyfoldUrl}/models`;
   const state = { status: "done", modelUrl };
   tabState.set(tabId, state);
   notifyPopup(tabId, state);

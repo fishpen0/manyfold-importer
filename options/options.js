@@ -69,7 +69,7 @@ $("testBtn").addEventListener("click", async () => {
         grant_type: "client_credentials",
         client_id: id,
         client_secret: secret,
-        scope: "public read write",
+        scope: "public read write upload",
       }),
     });
 
@@ -80,20 +80,24 @@ $("testBtn").addEventListener("click", async () => {
 
     const { access_token } = await tokenRes.json();
 
-    // Test the token by fetching collections
-    const collectionsRes = await fetch(`${url}/api/v1/collections?page[size]=100`, {
-      headers: {
-        Authorization: `Bearer ${access_token}`,
-        Accept: "application/json",
-      },
-    });
+    const apiHeaders = {
+      Authorization: `Bearer ${access_token}`,
+      Accept: "application/vnd.manyfold.v0+json",
+    };
 
-    if (!collectionsRes.ok) {
-      throw new Error(`Connected but API failed (${collectionsRes.status}). Check OAuth scopes.`);
+    // Verify the API is reachable
+    const modelsRes = await fetch(`${url}/models`, { headers: apiHeaders });
+    if (!modelsRes.ok) {
+      throw new Error(`Authenticated but API unreachable (${modelsRes.status}). Check OAuth scopes.`);
     }
 
-    const data = await collectionsRes.json();
-    const collections = data?.data ?? [];
+    // Fetch collections
+    let collections = [];
+    const collectionsRes = await fetch(`${url}/collections`, { headers: apiHeaders });
+    if (collectionsRes.ok) {
+      const data = await collectionsRes.json();
+      collections = data?.member ?? [];
+    }
 
     showStatus(`Connected! Found ${collections.length} collection(s).`, "success");
 
@@ -101,15 +105,16 @@ $("testBtn").addEventListener("click", async () => {
       const list = $("collectionsList");
       list.innerHTML = "";
       for (const c of collections) {
+        const collectionId = c["@id"];
         const li = document.createElement("li");
-        li.textContent = c.attributes?.name ?? c.id;
+        li.textContent = c.name ?? collectionId;
         const idChip = document.createElement("span");
         idChip.className = "collection-id";
-        idChip.textContent = `ID: ${c.id}`;
+        idChip.textContent = collectionId;
         idChip.title = "Click to use as default collection";
         idChip.addEventListener("click", () => {
-          fields.defaultCollectionId.value = c.id;
-          idChip.textContent = `✓ ${c.id}`;
+          fields.defaultCollectionId.value = collectionId;
+          idChip.textContent = `✓ ${collectionId}`;
         });
         li.appendChild(idChip);
         list.appendChild(li);

@@ -13,7 +13,8 @@
 
   "host_permissions": [
     "https://makerworld.com/*",
-    "https://makerworld.bblmake.com/*"
+    "https://makerworld.bblmake.com/*",
+    "<all_urls>"
   ],
 
   "background": {

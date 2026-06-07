@@ -112,7 +112,13 @@ async function init() {
   $("openOptionsError").addEventListener("click", openOptions);
   $("uploadBtn").addEventListener("click", startUpload);
   $("uploadAnywayBtn").addEventListener("click", forceUpload);
-  $("retryBtn").addEventListener("click", startUpload);
+  // Retry: re-upload if we have model data; otherwise re-scan the page
+  $("retryBtn").addEventListener("click", () => currentModelData ? startUpload() : rescanPage());
+  $("reloadBtn").addEventListener("click", async () => {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) browser.tabs.reload(tab.id);
+    showView("loading");
+  });
 
   // Get the active tab's state from the background worker
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -160,6 +166,10 @@ function applyState(state) {
       showView("done");
       break;
 
+    case "needs_reload":
+      showView("needs-reload");
+      break;
+
     case "error":
       $("errorMessage").textContent = state.error ?? "Unknown error.";
       showView("error");
@@ -168,6 +178,13 @@ function applyState(state) {
     default:
       showView("idle");
   }
+}
+
+async function rescanPage() {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  showView("loading");
+  await browser.runtime.sendMessage({ type: "RESCAN_TAB", tabId: tab.id });
 }
 
 async function startUpload() {

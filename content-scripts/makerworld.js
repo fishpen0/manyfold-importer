@@ -6,7 +6,9 @@
   const designId = match[1];
 
   // ── Step 1: Read model data from __NEXT_DATA__ ────────────────────────────
-  // Next.js embeds all SSR data here. Field names are camelCase on Makerworld.
+  // Next.js embeds all SSR data here on initial page load only. Field names are
+  // camelCase on Makerworld. SPA navigation does NOT update this element, so we
+  // validate the design ID against the URL to detect that case.
   const nextData = readNextData();
   const design = get(nextData, ["props", "pageProps", "design"]);
 
@@ -21,6 +23,14 @@
     return;
   }
 
+  // If __NEXT_DATA__ belongs to a different model, the user navigated here via
+  // SPA routing. The data won't match — signal that a reload is needed.
+  if (design.id?.toString() !== designId) {
+    console.warn("[Manyfold] __NEXT_DATA__ design ID", design.id, "does not match URL design ID", designId, "— SPA navigation detected.");
+    browser.runtime.sendMessage({ type: "SCRAPE_RESULT", modelData: null, needsReload: true });
+    return;
+  }
+
   // ── Step 2: Determine which files to download ─────────────────────────────
   // model_files lives at design.designExtension.model_files (top-level, not per-instance)
   const modelFiles = design.designExtension?.model_files ?? [];
@@ -31,10 +41,11 @@
   // Endpoint: /api/v1/design-service/instance/{instance.id}/f3mf  → { name, url }
   // Endpoint: /api/v1/design-service/instance/{instance.id}/stl   → { name, url } (guessed)
   // Uses session cookies automatically — no auth token needed.
+  // Fetches run in parallel to avoid N×latency sequential delay.
   const instances = design.instances ?? [];
   const files = [];
 
-  for (const inst of instances) {
+  await Promise.all(instances.map(async (inst) => {
     const instId = inst.id;
 
     if (has3mf) {
@@ -77,7 +88,7 @@
         console.warn("[Manyfold] /stl fetch failed:", e.message);
       }
     }
-  }
+  }));
 
   console.log("[Manyfold] Resolved files:", files.map(f => f.name));
 

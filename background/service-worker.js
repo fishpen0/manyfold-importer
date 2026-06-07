@@ -12,7 +12,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
     case "START_UPLOAD":
       return handleStartUpload(message.modelData, tabId);
     case "SCRAPE_RESULT":
-      return handleScrapeResult(message.modelData, tabId, message.error);
+      return handleScrapeResult(message.modelData, tabId, message.error, message.needsReload);
+    case "RESCAN_TAB":
+      return handleRescanTab(tabId);
     default:
       console.warn("[Manyfold] Unknown message type:", message.type);
   }
@@ -25,16 +27,39 @@ async function handleGetPageState(tabId) {
   return tabState.get(tabId) ?? { status: "idle" };
 }
 
-async function handleScrapeResult(modelData, tabId, error) {
+async function handleScrapeResult(modelData, tabId, error, needsReload = false) {
   if (!modelData) {
-    tabState.set(tabId, { status: "error", error: error ?? "Scraper returned no data." });
-    await browser.action.setBadgeText({ text: "!", tabId });
-    await browser.action.setBadgeBackgroundColor({ color: "#ef4444", tabId });
+    if (needsReload) {
+      const state = { status: "needs_reload" };
+      tabState.set(tabId, state);
+      notifyPopup(tabId, state);
+      await browser.action.setBadgeText({ text: "↺", tabId });
+      await browser.action.setBadgeBackgroundColor({ color: "#f59e0b", tabId });
+    } else {
+      const state = { status: "error", error: error ?? "Scraper returned no data." };
+      tabState.set(tabId, state);
+      notifyPopup(tabId, state);
+      await browser.action.setBadgeText({ text: "!", tabId });
+      await browser.action.setBadgeBackgroundColor({ color: "#ef4444", tabId });
+    }
     return;
   }
-  tabState.set(tabId, { status: "ready", modelData });
+  const state = { status: "ready", modelData };
+  tabState.set(tabId, state);
+  notifyPopup(tabId, state);
   await browser.action.setBadgeText({ text: "↑", tabId });
   await browser.action.setBadgeBackgroundColor({ color: "#22c55e", tabId });
+}
+
+async function handleRescanTab(tabId) {
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      files: ["content-scripts/base-scraper.js", "content-scripts/makerworld.js"],
+    });
+  } catch (e) {
+    setErrorState(tabId, `Could not scan page: ${e.message}`);
+  }
 }
 
 async function handleStartUpload(modelData, tabId) {
@@ -168,10 +193,43 @@ async function getSettings() {
   });
 }
 
-// Clear badge when navigating away
-browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+// Track pending SPA-navigation checks: tabId → timer id
+const pendingSpaCheck = new Map();
+
+// Clear badge when navigating away; re-inject on SPA navigation to model pages.
+// SPA navigation fires changeInfo.url but NOT changeInfo.status: "loading" (no page reload).
+// We schedule a re-injection after 500ms and cancel it if a real page load starts first.
+browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url) {
     tabState.delete(tabId);
     browser.action.setBadgeText({ text: "", tabId });
+
+    if (/https:\/\/makerworld\.com\/.*\/models\/\d+/.test(changeInfo.url)) {
+      const existing = pendingSpaCheck.get(tabId);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(async () => {
+        pendingSpaCheck.delete(tabId);
+        if (tabState.has(tabId)) return; // Manifest injection already ran
+        try {
+          await browser.scripting.executeScript({
+            target: { tabId },
+            files: ["content-scripts/base-scraper.js", "content-scripts/makerworld.js"],
+          });
+        } catch (e) {
+          console.warn("[Manyfold] SPA re-injection failed:", e.message);
+        }
+      }, 500);
+      pendingSpaCheck.set(tabId, timer);
+    }
+  }
+
+  if (changeInfo.status === "loading") {
+    // Real page load — content scripts will be injected by the manifest; cancel SPA check
+    const timer = pendingSpaCheck.get(tabId);
+    if (timer) {
+      clearTimeout(timer);
+      pendingSpaCheck.delete(tabId);
+    }
   }
 });

@@ -33,19 +33,27 @@ window.ManyfoldScraper = {
   normalizeLicense(raw) {
     if (!raw) return null;
     const map = {
-      "CC BY": "CC-BY-4.0",
-      "CC BY-SA": "CC-BY-SA-4.0",
-      "CC BY-NC": "CC-BY-NC-4.0",
+      // Full "CC BY-*" forms
       "CC BY-NC-SA": "CC-BY-NC-SA-4.0",
-      "CC BY-ND": "CC-BY-ND-4.0",
       "CC BY-NC-ND": "CC-BY-NC-ND-4.0",
+      "CC BY-NC": "CC-BY-NC-4.0",
+      "CC BY-SA": "CC-BY-SA-4.0",
+      "CC BY-ND": "CC-BY-ND-4.0",
+      "CC BY": "CC-BY-4.0",
       "CC0": "CC0-1.0",
+      // Short forms without "CC" prefix (MakerWorld uses these)
+      "BY-NC-SA": "CC-BY-NC-SA-4.0",
+      "BY-NC-ND": "CC-BY-NC-ND-4.0",
+      "BY-NC": "CC-BY-NC-4.0",
+      "BY-SA": "CC-BY-SA-4.0",
+      "BY-ND": "CC-BY-ND-4.0",
+      "BY": "CC-BY-4.0",
       "MIT": "MIT",
     };
     for (const [key, spdx] of Object.entries(map)) {
       if (raw.includes(key)) return spdx;
     }
-    return raw;
+    return null;
   },
 
   /**

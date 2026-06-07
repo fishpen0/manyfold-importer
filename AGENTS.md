@@ -40,8 +40,9 @@ icons/                        # 16/32/48/128 PNG icons
    active tab, renders the preview.
 5. User clicks "Send to Manyfold" → popup sends `START_UPLOAD`. Background
    authenticates against Manyfold (OAuth client credentials), downloads files
-   via `credentials: "include"` (uses Makerworld session cookies), creates the
-   model, uploads each file, optionally uploads the cover image.
+   via `credentials: "include"` (uses Makerworld session cookies), TUS-uploads
+   all files (including cover image) to `/upload`, then `POST /models` links
+   them all in one request. Manyfold processes the import asynchronously (202).
 6. Background streams progress updates back to the popup via `STATE_UPDATE`
    messages and persists final state in the per-tab map.
 
@@ -134,18 +135,38 @@ scraper makes one endpoint call per instance per format.
 
 ## Manyfold API specifics
 
-- Auth: OAuth 2 client_credentials flow.
-  `POST {base}/oauth/token` with `grant_type=client_credentials`, scope
-  `public read write`. Token TTL is honored with a 60s safety margin.
-- Routes assumed: `/api/v1/models`, `/api/v1/models/:id/model_files`,
-  `/api/v1/collections`. JSON:API envelope (`data.attributes`, `data.relationships`).
-- File uploads use `multipart/form-data` with field `model_file[file]` and
-  `model_file[kind]`. Do NOT set Content-Type — let fetch derive the boundary.
-- Manyfold has no `source_url` field on models. We stuff the source URL into
-  `notes` so duplicate detection can grep for it on subsequent uploads.
-- Duplicate check is best-effort: list first 50 models, substring match notes
-  for the source URL. The check is skipped when `modelData._skipDuplicateCheck`
-  is set (via the "Import Anyway" path).
+The live API spec is at `/api` on any Manyfold instance (Swagger UI). The
+source of truth is the GitHub repo: specs in `spec/requests/api/v0/` and
+serializers/deserializers in `app/serializers/manyfold_api/v0/`.
+
+- **API version**: v0 (not v1). The spec calls it unstable/pre-v1.
+- **MIME type**: `application/vnd.manyfold.v0+json` for both `Accept` and
+  `Content-Type`. Sending `application/json` will get you the HTML response
+  instead — the routes are shared with the web UI and differentiated by Accept.
+- **Paths**: routes are at the root — `/models`, `/collections`, `/creators`,
+  `/upload` — with NO `/api/v0/` prefix.
+- **Response shape**: JSON-LD, not JSON:API. Lists return `{ member: [...] }`.
+  Individual items return `{ "@id", "@type", name, description, ... }`.
+- **Auth**: OAuth 2 client_credentials. Scopes: `public read write upload`.
+  `POST {base}/oauth/token`. Token TTL honored with a 60s safety margin.
+- **Upload flow** (TUS protocol, https://tus.io):
+  1. `POST /upload` with `Tus-Resumable: 1.0.0`, `Upload-Length: <bytes>` →
+     201 with `Location` header containing the upload URL.
+  2. `PATCH <location>` with `Content-Type: application/offset+octet-stream`,
+     `Upload-Offset: 0` — stream all bytes in one request.
+  3. `POST /models` with `{ name, description, keywords, files: [{id, name}],
+     "spdx:license": {licenseId}, isPartOf: [{"@id": collectionPath}] }` →
+     202 Accepted, **no body**. Import is processed asynchronously.
+- **No immediate model URL**: `POST /models` returns 202 with no body. We link
+  to `${manyfoldUrl}/models` (the list) as the "done" URL.
+- **Collection IDs**: the `@id` field from the collection list (e.g.
+  `/collections/abc123`) is what goes in `isPartOf`. Store this in
+  `defaultCollectionId` settings — not a bare numeric ID.
+- **Duplicate check**: best-effort title match against the first page of
+  `/models`. The check is skipped when `modelData._skipDuplicateCheck` is set.
+- **host_permissions**: must include `<all_urls>` since the Manyfold instance
+  URL is user-configured. This is the same pattern as NZBDonkey, Torrent
+  Control, and similar self-hosted companion extensions.
 
 ## CSS gotcha — view switching
 
@@ -204,10 +225,14 @@ URLs at `?` to see just the path structure.
 ## Open follow-ups
 
 - STL fallback endpoint path is guessed (`/instance/{id}/stl`) — needs verification.
-- Cover image upload uses `kind: "image"` — confirm Manyfold accepts this kind.
-- No retry on transient upload failures; currently logs and continues.
+- Cover image is included in the TUS upload batch; Manyfold should auto-detect
+  it as the preview image based on MIME type — unverified in practice.
+- No retry on transient TUS upload failures; currently fails the whole import.
 - License normalizer in `base-scraper.js` is a tiny lookup table — extend as
   new licenses are encountered.
 - Per-tab state is in-memory in the background worker. MV3 non-persistent
   backgrounds CAN be torn down between events; if state loss becomes an issue,
   move to `browser.storage.session`.
+- Duplicate detection is title-only and first-page-only. A source URL stored
+  in `description` can't be searched via the API. May improve if Manyfold adds
+  a search/filter endpoint.

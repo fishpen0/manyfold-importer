@@ -20,24 +20,54 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
 });
 
-// Track per-tab state: what was scraped, upload progress, etc.
+// In-memory cache for the current service worker lifetime.
+// Backed by storage.session so state survives worker restarts (Firefox 115+, Chrome 102+).
 const tabState = new Map();
 
+async function getTabState(tabId) {
+  if (tabState.has(tabId)) return tabState.get(tabId);
+  const key = `tabState_${tabId}`;
+  const result = await browser.storage.session.get(key);
+  if (result[key]) {
+    tabState.set(tabId, result[key]);
+    return result[key];
+  }
+  return null;
+}
+
+async function setTabState(tabId, state) {
+  tabState.set(tabId, state);
+  await browser.storage.session.set({ [`tabState_${tabId}`]: stripBlobs(state) });
+}
+
+async function clearTabState(tabId) {
+  tabState.delete(tabId);
+  await browser.storage.session.remove(`tabState_${tabId}`);
+}
+
+function stripBlobs(state) {
+  if (!state.downloadedFiles) return state;
+  return {
+    ...state,
+    downloadedFiles: state.downloadedFiles.map(({ blob, ...rest }) => rest),
+  };
+}
+
 async function handleGetPageState(tabId) {
-  return tabState.get(tabId) ?? { status: "idle" };
+  return (await getTabState(tabId)) ?? { status: "idle" };
 }
 
 async function handleScrapeResult(modelData, tabId, error, needsReload = false) {
   if (!modelData) {
     if (needsReload) {
       const state = { status: "needs_reload" };
-      tabState.set(tabId, state);
+      await setTabState(tabId, state);
       notifyPopup(tabId, state);
       await browser.action.setBadgeText({ text: "↺", tabId });
       await browser.action.setBadgeBackgroundColor({ color: "#f59e0b", tabId });
     } else {
       const state = { status: "error", error: error ?? "Scraper returned no data." };
-      tabState.set(tabId, state);
+      await setTabState(tabId, state);
       notifyPopup(tabId, state);
       await browser.action.setBadgeText({ text: "!", tabId });
       await browser.action.setBadgeBackgroundColor({ color: "#ef4444", tabId });
@@ -45,7 +75,7 @@ async function handleScrapeResult(modelData, tabId, error, needsReload = false) 
     return;
   }
   const state = { status: "ready", modelData };
-  tabState.set(tabId, state);
+  await setTabState(tabId, state);
   notifyPopup(tabId, state);
   await browser.action.setBadgeText({ text: "↑", tabId });
   await browser.action.setBadgeBackgroundColor({ color: "#22c55e", tabId });
@@ -68,7 +98,7 @@ async function handleStartUpload(modelData, tabId) {
     return { success: false, error: "Manyfold is not configured. Open extension options." };
   }
 
-  tabState.set(tabId, { status: "uploading", progress: "Authenticating…", modelData });
+  await setTabState(tabId, { status: "uploading", progress: "Authenticating…", modelData });
   notifyPopup(tabId, { status: "uploading", progress: "Authenticating…" });
 
   const api = new ManyfoldAPI(settings.manyfoldUrl, settings.oauthClientId, settings.oauthClientSecret);
@@ -144,7 +174,7 @@ async function handleStartUpload(modelData, tabId) {
           modelData,
           downloadedFiles,
         };
-        tabState.set(tabId, state);
+        await setTabState(tabId, state);
         notifyPopup(tabId, state);
         return state;
       }
@@ -189,7 +219,7 @@ async function performUpload(api, modelData, downloadedFiles, settings, tabId) {
   // POST /models returns 202 Accepted with no body — link to models list
   const modelUrl = `${settings.manyfoldUrl}/models`;
   const state = { status: "done", modelUrl };
-  tabState.set(tabId, state);
+  await setTabState(tabId, state);
   notifyPopup(tabId, state);
 
   await browser.action.setBadgeText({ text: "✓", tabId });
@@ -198,9 +228,9 @@ async function performUpload(api, modelData, downloadedFiles, settings, tabId) {
   return { success: true, modelUrl };
 }
 
-function setErrorState(tabId, error) {
+async function setErrorState(tabId, error) {
   const state = { status: "error", error };
-  tabState.set(tabId, state);
+  await setTabState(tabId, state);
   notifyPopup(tabId, state);
   browser.action.setBadgeText({ text: "!", tabId });
   browser.action.setBadgeBackgroundColor({ color: "#ef4444", tabId });
@@ -231,7 +261,7 @@ const pendingSpaCheck = new Map();
 // We schedule a re-injection after 500ms and cancel it if a real page load starts first.
 browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url) {
-    tabState.delete(tabId);
+    await clearTabState(tabId);
     browser.action.setBadgeText({ text: "", tabId });
 
     if (/https:\/\/makerworld\.com\/.*\/models\/\d+/.test(changeInfo.url)) {

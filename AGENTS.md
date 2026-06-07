@@ -4,7 +4,7 @@ Context for AI agents working on this repo.
 
 ## What this is
 
-A Firefox WebExtension (Manifest V3) that scrapes 3D model pages and uploads
+A Firefox WebExtension (Manifest V3, requires Firefox 128+) that scrapes 3D model pages and uploads
 the model + metadata to a user-configured Manyfold instance via its REST API.
 Modeled after NZB Donkey / Torrent Control — one click, no leaving the page.
 
@@ -230,9 +230,6 @@ URLs at `?` to see just the path structure.
 - No retry on transient TUS upload failures; currently fails the whole import.
 - License normalizer in `base-scraper.js` is a tiny lookup table — extend as
   new licenses are encountered.
-- Per-tab state is in-memory in the background worker. MV3 non-persistent
-  backgrounds CAN be torn down between events; if state loss becomes an issue,
-  move to `browser.storage.session`.
 - Duplicate detection is title-only and first-page-only. A source URL stored
   in `description` can't be searched via the API. May improve if Manyfold adds
   a search/filter endpoint.

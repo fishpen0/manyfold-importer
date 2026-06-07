@@ -51,7 +51,9 @@ export class ManyfoldAPI {
       throw new Error(`${method} ${path} failed (${res.status}): ${text}`);
     }
     const ct = res.headers.get("content-type") ?? "";
-    return ct.includes("json") ? res.json() : null;
+    if (!ct.includes("json")) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
   }
 
   // TUS resumable upload — creates the upload slot then streams bytes in one PATCH.

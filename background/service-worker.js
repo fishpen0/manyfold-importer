@@ -79,11 +79,46 @@ async function handleStartUpload(modelData, tabId) {
     return setErrorState(tabId, `Authentication failed: ${e.message}`);
   }
 
+  notifyPopup(tabId, { status: "uploading", progress: "Resolving download URLs…" });
+
+  // Resolve download URLs for selected profiles (deferred from scrape time to avoid rate limiting)
+  const resolvedFiles = [];
+  for (const file of modelData.files) {
+    if (file.downloadUrl) {
+      resolvedFiles.push(file);
+      continue;
+    }
+    const endpoint = file.fileExt === "3mf" ? "f3mf" : "stl";
+    let urlRes;
+    try {
+      urlRes = await fetch(`https://makerworld.com/api/v1/design-service/instance/${file.instanceId}/${endpoint}`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+    } catch (e) {
+      return setErrorState(tabId, `Network error fetching download URL: ${e.message}`);
+    }
+    if (urlRes.status === 429) {
+      return setErrorState(tabId, "MakerWorld rate-limited the request. Wait a moment and retry.");
+    }
+    if (urlRes.status === 418) {
+      return setErrorState(tabId, "MakerWorld is showing a CAPTCHA. Go to the MakerWorld tab, complete it, then retry.");
+    }
+    if (!urlRes.ok) {
+      return setErrorState(tabId, `Could not get download URL for "${file.name}" (HTTP ${urlRes.status}). Make sure you are logged in to MakerWorld.`);
+    }
+    const { name, url } = await urlRes.json();
+    if (!url) {
+      return setErrorState(tabId, `No download URL returned for "${file.name}". Make sure you are logged in to MakerWorld.`);
+    }
+    resolvedFiles.push({ ...file, name: name || file.name, downloadUrl: url });
+  }
+
   notifyPopup(tabId, { status: "uploading", progress: "Downloading files…" });
 
   // Download all model files
   const downloadedFiles = [];
-  for (const file of modelData.files) {
+  for (const file of resolvedFiles) {
     try {
       const blob = await downloadFile(file.downloadUrl, file.name);
       downloadedFiles.push({ ...file, blob });
@@ -190,6 +225,7 @@ async function getSettings() {
     oauthClientId: "",
     oauthClientSecret: "",
     defaultCollectionId: "",
+    profileSelection: "first",
   });
 }
 

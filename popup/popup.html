@@ -49,13 +49,20 @@
       <div id="modelTags" class="tags"></div>
     </div>
 
-    <div class="detail-row">
+    <div class="detail-row profiles-row">
       <span class="label">Files</span>
-      <ul id="fileList" class="file-list"></ul>
+      <div class="profiles-wrap">
+        <div id="profileControls" class="profile-controls hidden">
+          <button type="button" id="selectAllBtn" class="btn-link">All</button>
+          <span class="ctrl-sep">·</span>
+          <button type="button" id="selectNoneBtn" class="btn-link">None</button>
+        </div>
+        <ul id="fileList" class="file-list"></ul>
+      </div>
     </div>
 
     <div id="noFilesWarning" class="warning hidden">
-      ⚠ No downloadable files found. Make sure you are logged into Makerworld.
+      ⚠ No profiles found on this page.
     </div>
 
     <button id="uploadBtn" class="btn-primary upload-btn">Send to Manyfold</button>

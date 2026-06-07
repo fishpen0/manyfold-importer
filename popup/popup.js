@@ -17,7 +17,7 @@ function showView(name) {
 }
 
 // Render the model preview
-function renderReady(modelData) {
+async function renderReady(modelData) {
   currentModelData = modelData;
 
   // Cover image
@@ -58,47 +58,66 @@ function renderReady(modelData) {
     }
   }
 
-  // Files
+  // Load profile selection preference
+  const { profileSelection } = await browser.storage.sync.get({ profileSelection: "first" });
+
+  // Files — rendered as checkboxes
   const fileListEl = $("fileList");
   fileListEl.innerHTML = "";
   const files = modelData.files ?? [];
+
   if (files.length === 0) {
     const li = document.createElement("li");
-    li.textContent = "No files detected";
+    li.textContent = "No profiles found";
     li.style.color = "var(--error)";
     fileListEl.appendChild(li);
-  } else {
-    for (const file of files) {
-      const li = document.createElement("li");
-      const ext = (file.name ?? "").split(".").pop().toLowerCase();
-      const badge = document.createElement("span");
-      badge.className = `file-badge badge-${ext === "3mf" ? "3mf" : ext === "stl" ? "stl" : "img"}`;
-      badge.textContent = ext;
-      li.appendChild(badge);
-
-      const name = document.createElement("span");
-      name.textContent = file.name;
-      li.appendChild(name);
-
-      if (!file.downloadUrl) {
-        const warn = document.createElement("span");
-        warn.className = "file-nourl";
-        warn.textContent = "(URL unavailable)";
-        li.appendChild(warn);
-      }
-
-      fileListEl.appendChild(li);
-    }
-  }
-
-  // Warn if no files resolved
-  if ((modelData.files ?? []).filter(f => f.downloadUrl).length === 0) {
     $("noFilesWarning").classList.remove("hidden");
+    $("profileControls").classList.add("hidden");
   } else {
     $("noFilesWarning").classList.add("hidden");
+    if (files.length > 1) {
+      $("profileControls").classList.remove("hidden");
+    }
+
+    files.forEach((file, i) => {
+      const checked = profileSelection === "all"
+        ? true
+        : profileSelection === "designer"
+          ? file.isDesigner
+          : i === 0; // "first" — default
+
+      const li = document.createElement("li");
+      const label = document.createElement("label");
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = `file-check-${i}`;
+      checkbox.checked = checked;
+      checkbox.addEventListener("change", updateUploadBtn);
+
+      const badge = document.createElement("span");
+      badge.className = `file-badge badge-${file.fileExt === "3mf" ? "3mf" : "stl"}`;
+      badge.textContent = file.fileExt;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = file.name;
+
+      label.appendChild(checkbox);
+      label.appendChild(badge);
+      label.appendChild(nameSpan);
+      li.appendChild(label);
+      fileListEl.appendChild(li);
+    });
   }
 
+  updateUploadBtn();
   showView("ready");
+}
+
+function updateUploadBtn() {
+  const files = currentModelData?.files ?? [];
+  const anyChecked = files.some((_, i) => $(`file-check-${i}`)?.checked);
+  $("uploadBtn").disabled = !anyChecked;
 }
 
 // Entry point
@@ -112,6 +131,20 @@ async function init() {
   $("openOptionsError").addEventListener("click", openOptions);
   $("uploadBtn").addEventListener("click", startUpload);
   $("uploadAnywayBtn").addEventListener("click", forceUpload);
+  $("selectAllBtn").addEventListener("click", () => {
+    (currentModelData?.files ?? []).forEach((_, i) => {
+      const cb = $(`file-check-${i}`);
+      if (cb) cb.checked = true;
+    });
+    updateUploadBtn();
+  });
+  $("selectNoneBtn").addEventListener("click", () => {
+    (currentModelData?.files ?? []).forEach((_, i) => {
+      const cb = $(`file-check-${i}`);
+      if (cb) cb.checked = false;
+    });
+    updateUploadBtn();
+  });
   // Retry: re-upload if we have model data; otherwise re-scan the page
   $("retryBtn").addEventListener("click", () => currentModelData ? startUpload() : rescanPage());
   $("reloadBtn").addEventListener("click", async () => {
@@ -138,7 +171,7 @@ async function init() {
   applyState(state);
 }
 
-function applyState(state) {
+async function applyState(state) {
   if (!state || state.status === "idle") {
     showView("idle");
     return;
@@ -146,7 +179,7 @@ function applyState(state) {
 
   switch (state.status) {
     case "ready":
-      renderReady(state.modelData);
+      await renderReady(state.modelData);
       break;
 
     case "uploading":
@@ -189,13 +222,18 @@ async function rescanPage() {
 
 async function startUpload() {
   if (!currentModelData) return;
+
+  // Build modelData with only the user-selected profiles
+  const selectedFiles = (currentModelData.files ?? []).filter((_, i) => $(`file-check-${i}`)?.checked);
+  if (selectedFiles.length === 0) return;
+
   showView("uploading");
   $("progressText").textContent = "Starting…";
 
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const result = await browser.runtime.sendMessage({
     type: "START_UPLOAD",
-    modelData: currentModelData,
+    modelData: { ...currentModelData, files: selectedFiles },
     tabId: tab?.id,
   });
 
@@ -212,10 +250,22 @@ async function startUpload() {
 
 async function forceUpload() {
   if (!currentModelData) return;
-  // Re-trigger upload — background will skip duplicate check on second pass
-  // by the time this runs, the duplicate state has already stored downloaded files
-  currentModelData._skipDuplicateCheck = true;
-  await startUpload();
+  // currentModelData.files is already the user's selected subset from the original startUpload call
+  showView("uploading");
+  $("progressText").textContent = "Starting…";
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const result = await browser.runtime.sendMessage({
+    type: "START_UPLOAD",
+    modelData: { ...currentModelData, _skipDuplicateCheck: true },
+    tabId: tab?.id,
+  });
+  if (result?.success) {
+    $("newModelLink").href = result.modelUrl;
+    showView("done");
+  } else if (result && !result.success) {
+    $("errorMessage").textContent = result.error ?? "Upload failed.";
+    showView("error");
+  }
 }
 
 init().catch((e) => {

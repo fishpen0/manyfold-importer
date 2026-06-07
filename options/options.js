@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const profileRadios = () => document.querySelectorAll('input[name="profileSelection"]');
 
 const fields = {
   manyfoldUrl: $("manyfoldUrl"),
@@ -14,10 +15,14 @@ browser.storage.sync
     oauthClientId: "",
     oauthClientSecret: "",
     defaultCollectionId: "",
+    profileSelection: "first",
   })
   .then((settings) => {
     for (const [key, el] of Object.entries(fields)) {
       el.value = settings[key] ?? "";
+    }
+    for (const radio of profileRadios()) {
+      radio.checked = radio.value === settings.profileSelection;
     }
   });
 
@@ -28,6 +33,10 @@ $("saveBtn").addEventListener("click", async () => {
 
   // Strip trailing slash from URL
   values.manyfoldUrl = values.manyfoldUrl.replace(/\/$/, "");
+
+  // Profile selection radio
+  const selectedRadio = document.querySelector('input[name="profileSelection"]:checked');
+  values.profileSelection = selectedRadio?.value ?? "first";
 
   await browser.storage.sync.set(values);
   showStatus("Settings saved.", "success");

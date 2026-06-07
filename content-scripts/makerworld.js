@@ -10,7 +10,7 @@
   // camelCase on Makerworld. SPA navigation does NOT update this element, so we
   // validate the design ID against the URL to detect that case.
   const nextData = readNextData();
-  const design = get(nextData, ["props", "pageProps", "design"]);
+  let design = get(nextData, ["props", "pageProps", "design"]);
 
   if (!design) {
     console.error("[Manyfold] Could not find design in __NEXT_DATA__. pageProps keys:",
@@ -23,76 +23,62 @@
     return;
   }
 
-  // If __NEXT_DATA__ belongs to a different model, the user navigated here via
-  // SPA routing. The data won't match — signal that a reload is needed.
+  // If __NEXT_DATA__ belongs to a different model (SPA navigation), fetch the
+  // current URL's HTML to get fresh SSR data rather than asking for a reload.
   if (design.id?.toString() !== designId) {
-    console.warn("[Manyfold] __NEXT_DATA__ design ID", design.id, "does not match URL design ID", designId, "— SPA navigation detected.");
-    browser.runtime.sendMessage({ type: "SCRAPE_RESULT", modelData: null, needsReload: true });
-    return;
+    console.warn("[Manyfold] SPA navigation detected — fetching fresh page data for design", designId);
+    try {
+      const res = await fetch(location.href, { credentials: "include" });
+      const html = await res.text();
+      const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+      if (m) {
+        const freshData = JSON.parse(m[1]);
+        const freshDesign = get(freshData, ["props", "pageProps", "design"]);
+        if (freshDesign?.id?.toString() === designId) {
+          design = freshDesign;
+        }
+      }
+    } catch (e) {
+      console.warn("[Manyfold] Fresh fetch failed:", e.message);
+    }
+
+    // If we still have the wrong design, fall back to the reload prompt
+    if (design.id?.toString() !== designId) {
+      browser.runtime.sendMessage({ type: "SCRAPE_RESULT", modelData: null, needsReload: true });
+      return;
+    }
   }
 
-  // ── Step 2: Determine which files to download ─────────────────────────────
-  // model_files lives at design.designExtension.model_files (top-level, not per-instance)
+  // ── Step 2: Build profile list from instance metadata ────────────────────
+  // Download URLs are NOT fetched here — firing N parallel requests triggers
+  // MakerWorld's rate limiter (429) when a model has many profiles. URLs are
+  // fetched individually at upload time for only the profiles the user selects.
   const modelFiles = design.designExtension?.model_files ?? [];
   const has3mf = modelFiles.some(f => f.modelType === "3mf");
-  console.log("[Manyfold] model_files:", modelFiles.map(f => `${f.modelName || f.modelType} (${f.modelType})`));
+  const fileExt = has3mf ? "3mf" : "stl";
 
-  // ── Step 3: Fetch presigned download URLs ─────────────────────────────────
-  // Endpoint: /api/v1/design-service/instance/{instance.id}/f3mf  → { name, url }
-  // Endpoint: /api/v1/design-service/instance/{instance.id}/stl   → { name, url } (guessed)
-  // Uses session cookies automatically — no auth token needed.
-  // Fetches run in parallel to avoid N×latency sequential delay.
   const instances = design.instances ?? [];
-  const files = [];
+  const designerUid = design.designCreator?.uid ?? null;
+  const defaultInstanceId = design.defaultInstanceId ?? null;
 
-  await Promise.all(instances.map(async (inst) => {
-    const instId = inst.id;
-
-    if (has3mf) {
-      try {
-        const res = await fetch(`/api/v1/design-service/instance/${instId}/f3mf`, {
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        });
-        if (res.ok) {
-          const { name, url } = await res.json();
-          if (url) {
-            files.push({ name: name || `model_${instId}.3mf`, type: "model", fileExt: "3mf", downloadUrl: url });
-          }
-        } else {
-          console.warn("[Manyfold] /f3mf returned", res.status, "for instance", instId);
-        }
-      } catch (e) {
-        console.warn("[Manyfold] /f3mf fetch failed:", e.message);
-      }
-    } else {
-      // No 3MF — fall back to STL endpoint
-      try {
-        const res = await fetch(`/api/v1/design-service/instance/${instId}/stl`, {
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Response may be { name, url } or an array of files
-          const entries = Array.isArray(data) ? data : (data.files ?? [data]);
-          for (const entry of entries) {
-            if (entry.url) {
-              files.push({ name: entry.name || `model_${instId}.stl`, type: "model", fileExt: "stl", downloadUrl: entry.url });
-            }
-          }
-        } else {
-          console.warn("[Manyfold] /stl returned", res.status, "for instance", instId);
-        }
-      } catch (e) {
-        console.warn("[Manyfold] /stl fetch failed:", e.message);
-      }
-    }
+  const files = instances.map(inst => ({
+    instanceId: inst.id,
+    name: inst.title || `Profile ${inst.id}`,
+    type: "model",
+    fileExt,
+    downloadUrl: null,
+    isDesigner: designerUid !== null && inst.instanceCreator?.uid === designerUid,
+    isDefault: inst.id === defaultInstanceId,
   }));
 
-  console.log("[Manyfold] Resolved files:", files.map(f => f.name));
+  // Fall back: if no instance matches defaultInstanceId, mark first as default
+  if (files.length > 0 && !files.some(f => f.isDefault)) {
+    files[0].isDefault = true;
+  }
 
-  // ── Step 4: Build the normalized model object ─────────────────────────────
+  console.log("[Manyfold] Profiles found:", files.length, "| has3mf:", has3mf);
+
+  // ── Step 3: Build the normalized model object ─────────────────────────────
   const creator = design.designCreator ?? {};
   const tags = (design.tags ?? design.tagsOriginal ?? [])
     .map(t => (typeof t === "string" ? t : t?.name ?? t?.value))
@@ -110,9 +96,8 @@
     tags,
     coverImageUrl: design.coverUrl ?? design.coverLandscape ?? null,
     files,
-    _hasToken: true, // session cookie auth, always available when logged in
   };
 
-  console.log("[Manyfold] Model ready:", modelData.title, "| files:", files.length);
+  console.log("[Manyfold] Model ready:", modelData.title, "| profiles:", files.length);
   reportModelData(modelData);
 })();

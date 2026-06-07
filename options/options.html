@@ -80,6 +80,32 @@
         <ul id="collectionsList" class="collections-list"></ul>
       </div>
     </section>
+
+    <section>
+      <h2>Import Behavior</h2>
+
+      <div class="field">
+        <label>Default profile selection</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="profileSelection" value="first" />
+            <span>First only</span>
+            <span class="radio-hint">Check only the first listed profile</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="profileSelection" value="designer" />
+            <span>By original designer</span>
+            <span class="radio-hint">Check all profiles uploaded by the model's original creator</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="profileSelection" value="all" />
+            <span>All profiles</span>
+            <span class="radio-hint">Check every available profile</span>
+          </label>
+        </div>
+        <p class="hint">You can always change individual selections in the popup before importing.</p>
+      </div>
+    </section>
   </div>
 
   <script src="options.js"></script>

@@ -362,6 +362,113 @@ describe("ManyfoldAPI.importModel()", () => {
 });
 
 // ---------------------------------------------------------------------------
+// createCollection()
+// ---------------------------------------------------------------------------
+
+describe("ManyfoldAPI.createCollection()", () => {
+  it("builds correct payload with all fields and returns @id", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ "@id": "/collections/new123", name: "My Collection" }, { status: 201 })
+    );
+
+    const id = await api.createCollection({
+      name: "My Collection",
+      caption: "by Alice",
+      description: "A nice collection\n\nSource: https://example.com",
+      parentId: "/collections/parent456",
+    });
+
+    expect(id).toBe("/collections/new123");
+    const [, init] = global.fetch.mock.calls.at(-1);
+    const body = JSON.parse(init.body);
+    expect(body.name).toBe("My Collection");
+    expect(body.caption).toBe("by Alice");
+    expect(body.description).toBe("A nice collection\n\nSource: https://example.com");
+    expect(body.isPartOf).toEqual({ "@id": "/collections/parent456" });
+  });
+
+  it("omits isPartOf when no parentId is provided", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ "@id": "/collections/abc" }, { status: 201 })
+    );
+
+    await api.createCollection({ name: "Solo Collection" });
+
+    const [, init] = global.fetch.mock.calls.at(-1);
+    const body = JSON.parse(init.body);
+    expect(body).not.toHaveProperty("isPartOf");
+  });
+
+  it("omits optional fields when not provided", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ "@id": "/collections/bare" }, { status: 201 })
+    );
+
+    await api.createCollection({ name: "Bare" });
+
+    const [, init] = global.fetch.mock.calls.at(-1);
+    const body = JSON.parse(init.body);
+    expect(body).not.toHaveProperty("caption");
+    expect(body).not.toHaveProperty("description");
+  });
+
+  it("POSTs to /collections with the Manyfold MIME type", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ "@id": "/collections/x" }, { status: 201 })
+    );
+
+    await api.createCollection({ name: "Test" });
+
+    const [url, init] = global.fetch.mock.calls.at(-1);
+    expect(url).toBe("https://manyfold.example.com/collections");
+    expect(init.headers["Content-Type"]).toBe("application/vnd.manyfold.v0+json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findCollectionByName()
+// ---------------------------------------------------------------------------
+
+describe("ManyfoldAPI.findCollectionByName()", () => {
+  it("returns the matching collection", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        member: [
+          { "@id": "/collections/1", name: "Vehicles" },
+          { "@id": "/collections/2", name: "Buildings" },
+        ],
+      })
+    );
+
+    const result = await api.findCollectionByName("Buildings");
+    expect(result?.["@id"]).toBe("/collections/2");
+  });
+
+  it("returns null when no collection matches", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ member: [{ "@id": "/collections/1", name: "Vehicles" }] })
+    );
+
+    const result = await api.findCollectionByName("Spaceships");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the list is empty", async () => {
+    const api = authenticatedApi();
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ member: [] }));
+
+    const result = await api.findCollectionByName("Anything");
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // listCollections()
 // ---------------------------------------------------------------------------
 

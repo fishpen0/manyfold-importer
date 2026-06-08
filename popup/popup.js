@@ -199,6 +199,13 @@ async function applyState(state) {
       showView("done");
       break;
 
+    case "partial":
+      $("partialText").textContent =
+        `${state.imported} of ${state.total} profile${state.total !== 1 ? "s" : ""} imported (${state.failed} failed).`;
+      $("partialCollectionLink").href = state.collectionUrl;
+      showView("partial");
+      break;
+
     case "needs_reload":
       showView("needs-reload");
       break;
@@ -239,10 +246,8 @@ async function startUpload() {
 
   // State updates come via the message listener; this handles the case
   // where the popup re-opens after a completed upload
-  if (result?.success) {
-    $("newModelLink").href = result.modelUrl;
-    showView("done");
-  } else if (result && !result.success) {
+  if (result?.success) applyState(result);
+  else if (result && !result.success) {
     $("errorMessage").textContent = result.error ?? "Upload failed.";
     showView("error");
   }
@@ -259,10 +264,8 @@ async function forceUpload() {
     modelData: { ...currentModelData, _skipDuplicateCheck: true },
     tabId: tab?.id,
   });
-  if (result?.success) {
-    $("newModelLink").href = result.modelUrl;
-    showView("done");
-  } else if (result && !result.success) {
+  if (result?.success) applyState(result);
+  else if (result && !result.success) {
     $("errorMessage").textContent = result.error ?? "Upload failed.";
     showView("error");
   }

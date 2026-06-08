@@ -92,6 +92,48 @@ async function handleRescanTab(tabId) {
   }
 }
 
+// Resolves a single file's presigned download URL from MakerWorld.
+// Attaches `hard: true` to errors that should abort the entire upload (rate-limit, CAPTCHA).
+async function resolveDownloadUrl(file) {
+  if (file.downloadUrl) return { ...file };
+  const endpoint = file.fileExt === "3mf" ? "f3mf" : "stl";
+  let res;
+  try {
+    res = await fetch(
+      `https://makerworld.com/api/v1/design-service/instance/${file.instanceId}/${endpoint}`,
+      { credentials: "include", headers: { Accept: "application/json" } }
+    );
+  } catch (e) {
+    throw Object.assign(new Error(`Network error fetching download URL: ${e.message}`), { hard: false });
+  }
+  if (res.status === 429) {
+    throw Object.assign(
+      new Error("MakerWorld rate-limited the request. Wait a moment and retry."),
+      { hard: true }
+    );
+  }
+  if (res.status === 418) {
+    throw Object.assign(
+      new Error("MakerWorld is showing a CAPTCHA. Go to the MakerWorld tab, complete it, then retry."),
+      { hard: true }
+    );
+  }
+  if (!res.ok) {
+    throw Object.assign(
+      new Error(`Could not get download URL for "${file.name}" (HTTP ${res.status}). Make sure you are logged in to MakerWorld.`),
+      { hard: false }
+    );
+  }
+  const { name, url } = await res.json();
+  if (!url) {
+    throw Object.assign(
+      new Error(`No download URL returned for "${file.name}". Make sure you are logged in to MakerWorld.`),
+      { hard: false }
+    );
+  }
+  return { ...file, name: name || file.name, downloadUrl: url };
+}
+
 async function handleStartUpload(modelData, tabId) {
   const settings = await getSettings();
   if (!settings.manyfoldUrl || !settings.oauthClientId || !settings.oauthClientSecret) {
@@ -109,44 +151,29 @@ async function handleStartUpload(modelData, tabId) {
     return setErrorState(tabId, `Authentication failed: ${e.message}`);
   }
 
+  // Collection mode when the setting is "collection" AND (>1 file OR single-profile-collection = "collection")
+  const useCollection =
+    settings.multiModelMode === "collection" &&
+    (modelData.files.length > 1 || settings.singleProfileCollection === "collection");
+
+  if (useCollection) {
+    return performCollectionUpload(api, modelData, settings, tabId);
+  }
+
+  // --- Single-model mode ---
   notifyPopup(tabId, { status: "uploading", progress: "Resolving download URLs…" });
 
-  // Resolve download URLs for selected profiles (deferred from scrape time to avoid rate limiting)
   const resolvedFiles = [];
   for (const file of modelData.files) {
-    if (file.downloadUrl) {
-      resolvedFiles.push(file);
-      continue;
-    }
-    const endpoint = file.fileExt === "3mf" ? "f3mf" : "stl";
-    let urlRes;
     try {
-      urlRes = await fetch(`https://makerworld.com/api/v1/design-service/instance/${file.instanceId}/${endpoint}`, {
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      });
+      resolvedFiles.push(await resolveDownloadUrl(file));
     } catch (e) {
-      return setErrorState(tabId, `Network error fetching download URL: ${e.message}`);
+      return setErrorState(tabId, e.message);
     }
-    if (urlRes.status === 429) {
-      return setErrorState(tabId, "MakerWorld rate-limited the request. Wait a moment and retry.");
-    }
-    if (urlRes.status === 418) {
-      return setErrorState(tabId, "MakerWorld is showing a CAPTCHA. Go to the MakerWorld tab, complete it, then retry.");
-    }
-    if (!urlRes.ok) {
-      return setErrorState(tabId, `Could not get download URL for "${file.name}" (HTTP ${urlRes.status}). Make sure you are logged in to MakerWorld.`);
-    }
-    const { name, url } = await urlRes.json();
-    if (!url) {
-      return setErrorState(tabId, `No download URL returned for "${file.name}". Make sure you are logged in to MakerWorld.`);
-    }
-    resolvedFiles.push({ ...file, name: name || file.name, downloadUrl: url });
   }
 
   notifyPopup(tabId, { status: "uploading", progress: "Downloading files…" });
 
-  // Download all model files
   const downloadedFiles = [];
   for (const file of resolvedFiles) {
     try {
@@ -170,7 +197,7 @@ async function handleStartUpload(modelData, tabId) {
       if (existing) {
         const state = {
           status: "duplicate",
-          existingUrl: `${settings.manyfoldUrl}${existing["@id"]}`,
+          existingUrl: manyfoldUrl(existing["@id"], settings.manyfoldUrl),
           modelData,
           downloadedFiles,
         };
@@ -184,6 +211,112 @@ async function handleStartUpload(modelData, tabId) {
   }
 
   return performUpload(api, modelData, downloadedFiles, settings, tabId);
+}
+
+async function performCollectionUpload(api, modelData, settings, tabId) {
+  notifyPopup(tabId, { status: "uploading", progress: "Creating collection…" });
+
+  let collectionId;
+  try {
+    const existing = await api.findCollectionByName(modelData.title);
+    if (existing) {
+      collectionId = existing["@id"];
+    } else {
+      collectionId = await api.createCollection({
+        name: modelData.title,
+        caption: modelData.creator?.name ? `by ${modelData.creator.name}` : null,
+        description: [
+          modelData.description,
+          modelData.sourceUrl ? `Source: ${modelData.sourceUrl}` : null,
+        ].filter(Boolean).join("\n\n"),
+        parentId: settings.defaultCollectionId || null,
+      });
+    }
+  } catch (e) {
+    return setErrorState(tabId, `Could not create collection: ${e.message}`);
+  }
+
+  const files = modelData.files;
+  let imported = 0;
+  let failed = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    notifyPopup(tabId, {
+      status: "uploading",
+      progress: `Uploading profile ${i + 1} of ${files.length}…`,
+    });
+
+    try {
+      let resolvedFile;
+      try {
+        resolvedFile = await resolveDownloadUrl(file);
+      } catch (e) {
+        if (e.hard) return setErrorState(tabId, e.message);
+        throw e;
+      }
+
+      const modelBlob = await downloadFile(resolvedFile.downloadUrl, resolvedFile.name);
+      const allFiles = [{ ...resolvedFile, blob: modelBlob }];
+
+      const coverUrl = file.instanceCoverUrl;
+      if (coverUrl) {
+        try {
+          const imgBlob = await downloadFile(coverUrl, "cover.jpg");
+          allFiles.push({ name: "cover.jpg", blob: imgBlob });
+        } catch (e) {
+          console.warn("[Manyfold] Cover download failed:", e.message);
+        }
+      }
+
+      const modelName = file.name; // profile title (inst.title), not the 3MF filename
+
+      const descParts = [file.instanceDescription];
+      if (file.contributor?.name) descParts.push(`Profile by ${file.contributor.name}`);
+
+      await api.importModel(
+        {
+          title: modelName,
+          description: descParts.filter(Boolean).join("\n\n"),
+          sourceUrl: modelData.sourceUrl,
+          license: modelData.license,
+          tags: modelData.tags,
+          collectionId,
+        },
+        allFiles
+      );
+
+      imported++;
+    } catch (e) {
+      console.warn(`[Manyfold] Failed to import profile "${file.name}":`, e.message);
+      failed++;
+    }
+
+    if (i < files.length - 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  if (imported === 0) {
+    return setErrorState(tabId, "No profiles could be imported into the collection.");
+  }
+
+  const collectionUrl = manyfoldUrl(collectionId, settings.manyfoldUrl);
+  const state =
+    failed > 0
+      ? { status: "partial", imported, total: files.length, failed, collectionUrl }
+      : { status: "done", modelUrl: collectionUrl };
+
+  await setTabState(tabId, state);
+  notifyPopup(tabId, state);
+
+  await browser.action.setBadgeText({ text: failed > 0 ? "~" : "✓", tabId });
+  await browser.action.setBadgeBackgroundColor({
+    color: failed > 0 ? "#f59e0b" : "#22c55e",
+    tabId,
+  });
+
+  return { success: true, ...state };
 }
 
 async function performUpload(api, modelData, downloadedFiles, settings, tabId) {
@@ -250,7 +383,21 @@ async function getSettings() {
     oauthClientSecret: "",
     defaultCollectionId: "",
     profileSelection: "first",
+    multiModelMode: "single",
+    singleProfileCollection: "model",
   });
+}
+
+// Rebase a Manyfold @id onto the user's configured URL.
+// The server's JSON-LD @id reflects its internal URL (e.g. localhost:3214),
+// which differs from the external URL the user accesses. Strip the origin and
+// reattach the user-configured base.
+function manyfoldUrl(id, baseUrl) {
+  try {
+    return `${baseUrl}${new URL(id).pathname}`;
+  } catch {
+    return `${baseUrl}${id}`;
+  }
 }
 
 // Track pending SPA-navigation checks: tabId → timer id

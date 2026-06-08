@@ -121,6 +121,20 @@ export class ManyfoldAPI {
     return data?.member ?? [];
   }
 
+  async createCollection({ name, caption, description, parentId } = {}) {
+    const payload = { name };
+    if (caption) payload.caption = caption;
+    if (description) payload.description = description;
+    if (parentId) payload.isPartOf = { "@id": parentId };
+    const data = await this.request("POST", "/collections", payload, MIME);
+    return data["@id"];
+  }
+
+  async findCollectionByName(name) {
+    const list = await this.listCollections();
+    return list.find((c) => c.name === name) ?? null;
+  }
+
   // Best-effort duplicate check by model name against the first page of results.
   async findModelByTitle(title) {
     try {

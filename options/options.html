@@ -105,6 +105,39 @@
         </div>
         <p class="hint">You can always change individual selections in the popup before importing.</p>
       </div>
+
+      <div class="field">
+        <label>Multi-profile import mode</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="multiModelMode" value="single" />
+            <span>Single model</span>
+            <span class="radio-hint">All selected profiles are uploaded as files inside one Manyfold model</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="multiModelMode" value="collection" />
+            <span>Collection</span>
+            <span class="radio-hint">Each profile becomes its own model, grouped in a sub-collection named after the design</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>When only one profile is selected</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="singleProfileCollection" value="model" />
+            <span>Upload as a single model</span>
+            <span class="radio-hint">Skip the collection wrapper when there's only one profile</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="singleProfileCollection" value="collection" />
+            <span>Always create a collection</span>
+            <span class="radio-hint">Create a one-item collection even for a single profile</span>
+          </label>
+        </div>
+        <p class="hint">Only applies when Multi-profile import mode is set to Collection.</p>
+      </div>
     </section>
   </div>
 

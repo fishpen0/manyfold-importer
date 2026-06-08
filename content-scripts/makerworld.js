@@ -61,15 +61,28 @@
   const designerUid = design.designCreator?.uid ?? null;
   const defaultInstanceId = design.defaultInstanceId ?? null;
 
-  const files = instances.map(inst => ({
-    instanceId: inst.id,
-    name: inst.title || `Profile ${inst.id}`,
-    type: "model",
-    fileExt,
-    downloadUrl: null,
-    isDesigner: designerUid !== null && inst.instanceCreator?.uid === designerUid,
-    isDefault: inst.id === defaultInstanceId,
-  }));
+  const files = instances.map(inst => {
+    const creator = inst.instanceCreator ?? null;
+    const contributor = creator
+      ? {
+          name: creator.name ?? creator.handle ?? null,
+          profileUrl: creator.handle ? `https://makerworld.com/@${creator.handle}` : null,
+        }
+      : null;
+
+    return {
+      instanceId: inst.id,
+      name: inst.title || `Profile ${inst.id}`,
+      type: "model",
+      fileExt,
+      downloadUrl: null,
+      isDesigner: designerUid !== null && creator?.uid === designerUid,
+      isDefault: inst.id === defaultInstanceId,
+      contributor,
+      instanceDescription: inst.summary ?? null,
+      instanceCoverUrl: inst.cover ?? null,
+    };
+  });
 
   // Fall back: if no instance matches defaultInstanceId, mark first as default
   if (files.length > 0 && !files.some(f => f.isDefault)) {

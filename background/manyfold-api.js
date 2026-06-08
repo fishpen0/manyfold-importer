@@ -111,7 +111,7 @@ export class ManyfoldAPI {
       files: uploadedFiles,
     };
     if (license) payload["spdx:license"] = { licenseId: license };
-    if (collectionId) payload.isPartOf = [{ "@id": collectionId }];
+    payload.isPartOf = collectionId ? [{ "@id": collectionId }] : [];
 
     await this.request("POST", "/models", payload, MIME);
   }

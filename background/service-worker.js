@@ -356,7 +356,7 @@ async function performUpload(api, modelData, downloadedFiles, settings, tabId) {
   await browser.action.setBadgeText({ text: "✓", tabId });
   await browser.action.setBadgeBackgroundColor({ color: "#22c55e", tabId });
 
-  return { success: true, modelUrl };
+  return { success: true, ...state };
 }
 
 async function setErrorState(tabId, error) {

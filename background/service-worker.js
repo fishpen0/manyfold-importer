@@ -1,5 +1,6 @@
 import { ManyfoldAPI } from "./manyfold-api.js";
 import { downloadFile } from "./file-downloader.js";
+import { manyfoldUrl, shouldUseCollection } from "./utils.js";
 
 // Message router — all cross-component communication goes through here
 browser.runtime.onMessage.addListener((message, sender) => {
@@ -151,10 +152,7 @@ async function handleStartUpload(modelData, tabId) {
     return setErrorState(tabId, `Authentication failed: ${e.message}`);
   }
 
-  // Collection mode when the setting is "collection" AND (>1 file OR single-profile-collection = "collection")
-  const useCollection =
-    settings.multiModelMode === "collection" &&
-    (modelData.files.length > 1 || settings.singleProfileCollection === "collection");
+  const useCollection = shouldUseCollection(modelData.files.length, settings);
 
   if (useCollection) {
     return performCollectionUpload(api, modelData, settings, tabId);
@@ -386,18 +384,6 @@ async function getSettings() {
     multiModelMode: "single",
     singleProfileCollection: "model",
   });
-}
-
-// Rebase a Manyfold @id onto the user's configured URL.
-// The server's JSON-LD @id reflects its internal URL (e.g. localhost:3214),
-// which differs from the external URL the user accesses. Strip the origin and
-// reattach the user-configured base.
-function manyfoldUrl(id, baseUrl) {
-  try {
-    return `${baseUrl}${new URL(id).pathname}`;
-  } catch {
-    return `${baseUrl}${id}`;
-  }
 }
 
 // Track pending SPA-navigation checks: tabId → timer id

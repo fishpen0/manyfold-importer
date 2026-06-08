@@ -93,15 +93,15 @@ async function handleRescanTab(tabId) {
   }
 }
 
-// Resolves a single file's presigned download URL from MakerWorld.
-// Attaches `hard: true` to errors that should abort the entire upload (rate-limit, CAPTCHA).
-async function resolveDownloadUrl(file) {
-  if (file.downloadUrl) return { ...file };
-  const endpoint = file.fileExt === "3mf" ? "f3mf" : "stl";
+// Fetches a presigned download URL from a single MakerWorld instance endpoint.
+// Returns { name, url } on success, or null on 404 (so the caller can try the
+// other endpoint). Throws with `hard: true` for errors that should abort the
+// whole upload (rate-limit, CAPTCHA).
+async function fetchInstanceUrl(instanceId, endpoint, fileName) {
   let res;
   try {
     res = await fetch(
-      `https://makerworld.com/api/v1/design-service/instance/${file.instanceId}/${endpoint}`,
+      `https://makerworld.com/api/v1/design-service/instance/${instanceId}/${endpoint}`,
       { credentials: "include", headers: { Accept: "application/json" } }
     );
   } catch (e) {
@@ -119,20 +119,39 @@ async function resolveDownloadUrl(file) {
       { hard: true }
     );
   }
+  // 404 means this format isn't available for the instance — let the caller fall back.
+  if (res.status === 404) return null;
   if (!res.ok) {
     throw Object.assign(
-      new Error(`Could not get download URL for "${file.name}" (HTTP ${res.status}). Make sure you are logged in to MakerWorld.`),
+      new Error(`Could not get download URL for "${fileName}" (HTTP ${res.status}). Make sure you are logged in to MakerWorld.`),
       { hard: false }
     );
   }
   const { name, url } = await res.json();
-  if (!url) {
-    throw Object.assign(
-      new Error(`No download URL returned for "${file.name}". Make sure you are logged in to MakerWorld.`),
-      { hard: false }
-    );
+  return url ? { name, url } : null;
+}
+
+// Resolves a single file's presigned download URL from MakerWorld.
+// The per-instance download is a print profile that MakerWorld may only serve in
+// one format: a model whose source files are STL can still only be downloadable as
+// a sliced 3MF (and vice-versa). We try the format the scraper guessed first, then
+// fall back to the other so a wrong guess doesn't 404 the whole import.
+// Attaches `hard: true` to errors that should abort the entire upload (rate-limit, CAPTCHA).
+async function resolveDownloadUrl(file) {
+  if (file.downloadUrl) return { ...file };
+  const endpoints = file.fileExt === "3mf" ? ["f3mf", "stl"] : ["stl", "f3mf"];
+
+  for (const endpoint of endpoints) {
+    const result = await fetchInstanceUrl(file.instanceId, endpoint, file.name);
+    if (result) {
+      return { ...file, name: result.name || file.name, downloadUrl: result.url };
+    }
   }
-  return { ...file, name: name || file.name, downloadUrl: url };
+
+  throw Object.assign(
+    new Error(`No downloadable file found for "${file.name}". Make sure you are logged in to MakerWorld.`),
+    { hard: false }
+  );
 }
 
 async function handleStartUpload(modelData, tabId) {

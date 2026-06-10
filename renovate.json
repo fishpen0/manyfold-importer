@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["vitest", "@vitest/coverage-v8"],
+      "groupName": "vitest"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

@@ -357,7 +357,7 @@ describe("ManyfoldAPI.importModel()", () => {
     const body = JSON.parse(lastCall[1].body);
 
     expect(body).not.toHaveProperty("spdx:license");
-    expect(body).not.toHaveProperty("isPartOf");
+    expect(body.isPartOf).toEqual([]);
   });
 });
 
